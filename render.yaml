@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: visa-processing-predictor
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn src.api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: CORS_ORIGINS
+        value: "https://jingran-zhou.com"
+      - key: VISA_REFRESH_TTL_SECONDS
+        value: "21600"
+      - key: VISA_REFRESH_MIN_INTERVAL
+        value: "3600"
+      - key: VISA_CALIBRATION_FACTOR
+        value: "1.5"

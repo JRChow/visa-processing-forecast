@@ -6,3 +6,6 @@ numpy
 scipy
 python-dateutil
 pytest
+fastapi
+uvicorn
+pydantic

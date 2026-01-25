@@ -1,0 +1,26 @@
+name: Refresh Checkee Data
+
+on:
+  schedule:
+    - cron: "17 2,8,14,20 * * *"
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call refresh endpoint
+        env:
+          REFRESH_URL: ${{ secrets.VISA_REFRESH_URL }}
+          REFRESH_KEY: ${{ secrets.VISA_REFRESH_KEY }}
+        run: |
+          if [ -z "$REFRESH_URL" ]; then
+            echo "Missing VISA_REFRESH_URL secret" >&2
+            exit 1
+          fi
+
+          if [ -n "$REFRESH_KEY" ]; then
+            curl -sS -X POST "$REFRESH_URL" -H "x-api-key: $REFRESH_KEY" -H "Content-Type: application/json"
+          else
+            curl -sS -X POST "$REFRESH_URL" -H "Content-Type: application/json"
+          fi

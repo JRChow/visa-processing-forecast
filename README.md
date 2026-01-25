@@ -90,3 +90,47 @@ graph TD
     E --> F[Interactive CLI]
     F --> G[Probabilistic Report]
 ```
+
+## 🌐 API (FastAPI)
+
+The repository now ships a small API for powering the web UI.
+
+### Run locally
+```bash
+uvicorn src.api:app --reload --host 0.0.0.0 --port 8000
+```
+
+### Predict request
+```bash
+curl -X POST http://localhost:8000/predict \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "check_date": "2025-12-03",
+    "consulate": "GuangZhou",
+    "visa_type": "H1",
+    "major": "CS",
+    "as_of": "2026-01-20"
+  }'
+```
+
+### Environment variables
+- `VISA_DATA_PATH` (default: `data/raw_data.csv`)
+- `VISA_CACHE_DIR` (default: `cache`)
+- `VISA_MONTHS_BACK` (default: `18`)
+- `VISA_REFRESH_TTL_SECONDS` (default: `21600`)
+- `VISA_REFRESH_MIN_INTERVAL` (default: `3600`)
+- `VISA_CALIBRATION_FACTOR` (default: `1.5`)
+- `VISA_REFRESH_KEY` (optional: protects `/refresh`)
+- `CORS_ORIGINS` (comma-separated list)
+
+## Render deploy (lowest friction)
+
+1) Push this repo to GitHub.
+2) In Render: New -> Web Service -> connect the repo.
+3) Render auto-detects `render.yaml`. Click Deploy.
+4) Copy the service URL (e.g. https://your-service.onrender.com).
+5) Set your site env var to: `PUBLIC_VISA_PREDICTOR_API=https://your-service.onrender.com/predict`.
+
+Optional:
+- Add a cron ping (UptimeRobot) to reduce cold starts.
+- Set `VISA_REFRESH_KEY` and call `POST /refresh` from a cron job 3-6x/day.
