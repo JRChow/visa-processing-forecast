@@ -54,6 +54,11 @@ def on_startup() -> None:
 def health() -> dict:
     return {"status": "ok", "data_path": store.data_path}
 
+@app.get("/options")
+def options() -> dict:
+    store.ensure_model()
+    return store.get_options()
+
 
 @app.post("/predict", response_model=PredictResponse)
 def predict(body: PredictRequest, background_tasks: BackgroundTasks) -> PredictResponse:

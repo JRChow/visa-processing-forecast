@@ -2,7 +2,7 @@ import os
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List
 
 from src.model import VisaSurvivalModel
 from src.refresh import refresh_data
@@ -46,10 +46,12 @@ class ModelStore:
     quantile_steps: int
     expectation_steps: int
     forecast_ttl_seconds: int
+    options_ttl_seconds: int
     model: VisaSurvivalModel | None = None
     model_mtime: float = 0.0
     params_cache: Dict[Tuple[str, str, str], Tuple[Tuple[float, ...], float]] = field(default_factory=dict)
     forecast_cache: Dict[Tuple[str, str, str, int, float], Tuple[dict, float]] = field(default_factory=dict)
+    options_cache: Tuple[dict, float] | None = None
     last_refresh_attempt: float = 0.0
     lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -150,6 +152,55 @@ class ModelStore:
             "predict_ms": round(predict_ms, 2),
         }
 
+    def get_options(self, limit: int = 10) -> dict:
+        if self.model is None:
+            raise RuntimeError("Model not initialized")
+
+        if self.options_cache:
+            cached_value, cached_ts = self.options_cache
+            if (_now_ts() - cached_ts) < self.options_ttl_seconds:
+                return cached_value
+
+        df = self.model.df
+        consulates = (
+            df["consulate"].value_counts().head(limit).reset_index().values.tolist()
+        )
+        visa_types = (
+            df["visa_type"].value_counts().head(limit).reset_index().values.tolist()
+        )
+        major_buckets = (
+            df["major_bucket"].value_counts().reset_index().values.tolist()
+        )
+
+        major_labels = {
+            "CS": "CS / AI",
+            "ECE": "EE / ECE / Robotics",
+            "STEM": "STEM (Bio/Chem/Phys/Math)",
+            "Other": "Other / Unspecified",
+        }
+
+        options = {
+            "consulates": [
+                {"value": name, "label": name, "count": int(count)}
+                for name, count in consulates
+            ],
+            "visa_types": [
+                {"value": name, "label": name, "count": int(count)}
+                for name, count in visa_types
+            ],
+            "major_buckets": [
+                {
+                    "value": name,
+                    "label": major_labels.get(name, name),
+                    "count": int(count),
+                }
+                for name, count in major_buckets
+            ],
+        }
+
+        self.options_cache = (options, _now_ts())
+        return options
+
     @staticmethod
     def bucket_major(value: str) -> str:
         return _bucket_major(value)
@@ -165,6 +216,7 @@ def build_store() -> ModelStore:
     quantile_steps = int(os.getenv("VISA_QUANTILE_STEPS", "8000"))
     expectation_steps = int(os.getenv("VISA_EXPECTATION_STEPS", "5000"))
     forecast_ttl = int(os.getenv("VISA_FORECAST_CACHE_TTL_SECONDS", str(2 * 3600)))
+    options_ttl = int(os.getenv("VISA_OPTIONS_CACHE_TTL_SECONDS", str(6 * 3600)))
 
     return ModelStore(
         data_path=data_path,
@@ -176,4 +228,5 @@ def build_store() -> ModelStore:
         quantile_steps=quantile_steps,
         expectation_steps=expectation_steps,
         forecast_ttl_seconds=forecast_ttl,
+        options_ttl_seconds=options_ttl,
     )

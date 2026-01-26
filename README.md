@@ -123,6 +123,7 @@ curl -X POST http://localhost:8000/predict \
 - `VISA_QUANTILE_STEPS` (default: `8000`)
 - `VISA_EXPECTATION_STEPS` (default: `5000`)
 - `VISA_FORECAST_CACHE_TTL_SECONDS` (default: `7200`)
+- `VISA_OPTIONS_CACHE_TTL_SECONDS` (default: `21600`)
 - `VISA_REFRESH_KEY` (optional: protects `/refresh`)
 - `CORS_ORIGINS` (comma-separated list)
 
