@@ -54,6 +54,10 @@ def on_startup() -> None:
 def health() -> dict:
     return {"status": "ok", "data_path": store.data_path}
 
+@app.head("/health")
+def health_head() -> None:
+    return None
+
 @app.get("/options")
 def options() -> dict:
     store.ensure_model()
