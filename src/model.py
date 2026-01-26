@@ -333,6 +333,14 @@ class VisaSurvivalModel:
             # Component 2 (Log-Student-t with df=5)
             s2 = student_t.sf((np.log(t) - mu2) / sigma2, df)
             return pi * s2 + (1 - pi) * s1
+
+        def S_vec(t_arr):
+            t_arr = np.maximum(np.asarray(t_arr, dtype=float), 1e-9)
+            z1 = (np.log(t_arr) - mu1) / sigma1
+            z2 = (np.log(t_arr) - mu2) / sigma2
+            s1 = norm.sf(z1)
+            s2 = student_t.sf(z2, df)
+            return pi * s2 + (1 - pi) * s1
             
         s_t0 = S(t0)
         
@@ -352,7 +360,7 @@ class VisaSurvivalModel:
         
         max_search = max(t0 + 400, 600)
         t_range = np.linspace(t0, max_search, quantile_steps)
-        s_vals = np.array([S(t) for t in t_range])
+        s_vals = S_vec(t_range)
         
         # Find P50 first (anchor)
         p50_target = s_t0 * 0.5
@@ -375,7 +383,7 @@ class VisaSurvivalModel:
         # Expected value
         t_int = np.linspace(t0, 2000, expectation_steps)
         dt = t_int[1] - t_int[0]
-        s_int = np.array([S(t) for t in t_int])
+        s_int = S_vec(t_int)
         results['ExpectedValue'] = t0 + np.sum(s_int / s_t0) * dt
         
         results['ProbNext7'] = (S(t0) - S(t0 + 7)) / s_t0
