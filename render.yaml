@@ -18,3 +18,9 @@ services:
         value: "3600"
       - key: VISA_CALIBRATION_FACTOR
         value: "1.5"
+      - key: VISA_QUANTILE_STEPS
+        value: "4000"
+      - key: VISA_EXPECTATION_STEPS
+        value: "2500"
+      - key: VISA_FORECAST_CACHE_TTL_SECONDS
+        value: "7200"

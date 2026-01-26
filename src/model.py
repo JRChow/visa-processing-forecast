@@ -316,7 +316,7 @@ class VisaSurvivalModel:
         
         return similar.head(k)[['check_date', 'waiting_days', 'major', 'user_handle']]
 
-    def predict_conditional(self, params, t0, calibration_factor=1.0):
+    def predict_conditional(self, params, t0, calibration_factor=1.0, quantile_steps=8000, expectation_steps=5000):
         """
         Conditional prediction given T > t0.
         calibration_factor: multiplier for interval width (>1 widens intervals)
@@ -351,7 +351,7 @@ class VisaSurvivalModel:
         results = {}
         
         max_search = max(t0 + 400, 600)
-        t_range = np.linspace(t0, max_search, 8000)
+        t_range = np.linspace(t0, max_search, quantile_steps)
         s_vals = np.array([S(t) for t in t_range])
         
         # Find P50 first (anchor)
@@ -373,7 +373,7 @@ class VisaSurvivalModel:
                 results[f"P{int(q*100)}"] = raw_quantile
             
         # Expected value
-        t_int = np.linspace(t0, 2000, 5000)
+        t_int = np.linspace(t0, 2000, expectation_steps)
         dt = t_int[1] - t_int[0]
         s_int = np.array([S(t) for t in t_int])
         results['ExpectedValue'] = t0 + np.sum(s_int / s_t0) * dt

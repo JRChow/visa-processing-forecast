@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
@@ -57,6 +57,7 @@ def health() -> dict:
 
 @app.post("/predict", response_model=PredictResponse)
 def predict(body: PredictRequest, background_tasks: BackgroundTasks) -> PredictResponse:
+    t_start = datetime.now()
     store.ensure_model()
     store.maybe_refresh_background()
 
@@ -71,11 +72,16 @@ def predict(body: PredictRequest, background_tasks: BackgroundTasks) -> PredictR
     visa_type = body.visa_type.strip() or "H1"
     major_bucket = store.bucket_major(body.major)
 
-    forecast = store.predict(consulate, visa_type, major_bucket, t0)
+    forecast, perf = store.predict(consulate, visa_type, major_bucket, t0)
 
     estimated_completion = None
-    if "ExpectedValue" in forecast:
-        estimated_completion = (check_date + _days(int(round(forecast["ExpectedValue"]))))
+    if "ExpectedValue" in forecast and forecast["ExpectedValue"] is not None:
+        estimated_completion = check_date + _days(int(round(forecast["ExpectedValue"])))
+
+    percentile_dates = {}
+    for key in ("P25", "P50", "P75", "P90"):
+        if key in forecast and forecast[key] is not None:
+            percentile_dates[f"{key}Date"] = (check_date + _days(int(round(forecast[key])))).date().isoformat()
 
     response = PredictResponse(
         profile={
@@ -89,10 +95,16 @@ def predict(body: PredictRequest, background_tasks: BackgroundTasks) -> PredictR
         forecast={
             **forecast,
             "EstimatedCompletion": estimated_completion.date().isoformat() if estimated_completion else None,
+            **percentile_dates,
         },
         metadata={
             "data_mtime": store.model_mtime,
             "refresh_ttl_seconds": store.refresh_ttl_seconds,
+            "params_cached": perf.get("params_cached"),
+            "forecast_cached": perf.get("forecast_cached"),
+            "fit_ms": perf.get("fit_ms"),
+            "predict_ms": perf.get("predict_ms"),
+            "server_time": t_start.isoformat(),
         },
     )
 
@@ -121,7 +133,5 @@ def _parse_date(value: str) -> datetime:
         raise HTTPException(status_code=400, detail="invalid date format, use YYYY-MM-DD") from exc
 
 
-def _days(num: int):
-    from datetime import timedelta
-
+def _days(num: int) -> timedelta:
     return timedelta(days=num)

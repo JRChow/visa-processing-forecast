@@ -43,9 +43,13 @@ class ModelStore:
     refresh_ttl_seconds: int
     refresh_min_interval: int
     calibration_factor: float
+    quantile_steps: int
+    expectation_steps: int
+    forecast_ttl_seconds: int
     model: VisaSurvivalModel | None = None
     model_mtime: float = 0.0
     params_cache: Dict[Tuple[str, str, str], Tuple[Tuple[float, ...], float]] = field(default_factory=dict)
+    forecast_cache: Dict[Tuple[str, str, str, int, float], Tuple[dict, float]] = field(default_factory=dict)
     last_refresh_attempt: float = 0.0
     lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -93,14 +97,14 @@ class ModelStore:
         self.params_cache.clear()
         return count
 
-    def get_params(self, consulate: str, visa_type: str, major: str) -> Tuple[float, ...]:
+    def get_params(self, consulate: str, visa_type: str, major: str) -> Tuple[Tuple[float, ...], bool]:
         if self.model is None:
             raise RuntimeError("Model not initialized")
 
         key = (consulate, visa_type, major)
         cached = self.params_cache.get(key)
         if cached:
-            return cached[0]
+            return cached[0], True
 
         params = self.model.fit_aft(
             consulate=consulate,
@@ -110,15 +114,41 @@ class ModelStore:
             ghost_decay=90,
         )
         self.params_cache[key] = (params, _now_ts())
-        return params
+        return params, False
 
-    def predict(self, consulate: str, visa_type: str, major: str, t0: int) -> dict:
+    def predict(self, consulate: str, visa_type: str, major: str, t0: int) -> Tuple[dict, dict]:
         if self.model is None:
             raise RuntimeError("Model not initialized")
 
-        params = self.get_params(consulate, visa_type, major)
-        forecast = self.model.predict_conditional(params, t0, calibration_factor=self.calibration_factor)
-        return forecast
+        t_start = time.perf_counter()
+        params, params_cached = self.get_params(consulate, visa_type, major)
+        fit_ms = (time.perf_counter() - t_start) * 1000
+
+        forecast_key = (consulate, visa_type, major, t0, self.model_mtime)
+        cached_forecast = self.forecast_cache.get(forecast_key)
+        if cached_forecast and (_now_ts() - cached_forecast[1]) < self.forecast_ttl_seconds:
+            forecast = cached_forecast[0]
+            predict_ms = 0.0
+            forecast_cached = True
+        else:
+            t_pred = time.perf_counter()
+            forecast = self.model.predict_conditional(
+                params,
+                t0,
+                calibration_factor=self.calibration_factor,
+                quantile_steps=self.quantile_steps,
+                expectation_steps=self.expectation_steps,
+            )
+            predict_ms = (time.perf_counter() - t_pred) * 1000
+            self.forecast_cache[forecast_key] = (forecast, _now_ts())
+            forecast_cached = False
+
+        return forecast, {
+            "params_cached": params_cached,
+            "forecast_cached": forecast_cached,
+            "fit_ms": round(fit_ms, 2),
+            "predict_ms": round(predict_ms, 2),
+        }
 
     @staticmethod
     def bucket_major(value: str) -> str:
@@ -132,6 +162,9 @@ def build_store() -> ModelStore:
     refresh_ttl = int(os.getenv("VISA_REFRESH_TTL_SECONDS", str(6 * 3600)))
     refresh_min = int(os.getenv("VISA_REFRESH_MIN_INTERVAL", str(60 * 60)))
     calibration = float(os.getenv("VISA_CALIBRATION_FACTOR", "1.5"))
+    quantile_steps = int(os.getenv("VISA_QUANTILE_STEPS", "8000"))
+    expectation_steps = int(os.getenv("VISA_EXPECTATION_STEPS", "5000"))
+    forecast_ttl = int(os.getenv("VISA_FORECAST_CACHE_TTL_SECONDS", str(2 * 3600)))
 
     return ModelStore(
         data_path=data_path,
@@ -140,4 +173,7 @@ def build_store() -> ModelStore:
         refresh_ttl_seconds=refresh_ttl,
         refresh_min_interval=refresh_min,
         calibration_factor=calibration,
+        quantile_steps=quantile_steps,
+        expectation_steps=expectation_steps,
+        forecast_ttl_seconds=forecast_ttl,
     )
