@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import os
 from typing import Optional
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
@@ -9,6 +10,7 @@ from src.service import build_store
 
 app = FastAPI(title="Visa Processing Prediction API", version="0.1.0")
 store = build_store()
+DEBUG_ERRORS = os.getenv("DEBUG_ERRORS", "0") == "1"
 
 cors_origins = [
     origin.strip()
@@ -51,8 +53,16 @@ def on_startup() -> None:
 
 
 @app.get("/health")
-def health() -> dict:
-    return {"status": "ok", "data_path": store.data_path}
+def health(check_model: int = 0) -> dict:
+    payload = {"status": "ok", "data_path": store.data_path}
+    if check_model:
+        try:
+            store.ensure_model()
+            payload["model_status"] = "ok"
+        except Exception as exc:
+            payload["model_status"] = "error"
+            payload["error"] = str(exc) if DEBUG_ERRORS else "model_init_failed"
+    return payload
 
 @app.head("/health")
 def health_head() -> None:
@@ -60,14 +70,22 @@ def health_head() -> None:
 
 @app.get("/options")
 def options() -> dict:
-    store.ensure_model()
-    return store.get_options()
+    try:
+        store.ensure_model()
+        return store.get_options()
+    except Exception as exc:
+        detail = str(exc) if DEBUG_ERRORS else "options_failed"
+        raise HTTPException(status_code=500, detail=detail) from exc
 
 
 @app.post("/predict", response_model=PredictResponse)
 def predict(body: PredictRequest, background_tasks: BackgroundTasks) -> PredictResponse:
     t_start = datetime.now()
-    store.ensure_model()
+    try:
+        store.ensure_model()
+    except Exception as exc:
+        detail = str(exc) if DEBUG_ERRORS else "model_init_failed"
+        raise HTTPException(status_code=500, detail=detail) from exc
     store.maybe_refresh_background()
 
     check_date = _parse_date(body.check_date)
